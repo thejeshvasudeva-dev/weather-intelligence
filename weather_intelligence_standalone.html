@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weather Intelligence - Standalone</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            slate: {
+              850: '#0f172a',
+              950: '#020617',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React & ReactDOM CDNs -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Babel Standalone for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    /* Custom Scrollbars */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen selection:bg-blue-600 selection:text-white">
+
+  <div id="root"></div>
+
+  <!-- React Application Script -->
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    // Open-Meteo Weather Codes Mapping
+    const WEATHER_CODES = {
+      0: { label: 'Clear Sky', icon: 'sun', description: 'Sunny & bright skies' },
+      1: { label: 'Mainly Clear', icon: 'sun', description: 'Mostly sunny with slight clouds' },
+      2: { label: 'Partly Cloudy', icon: 'cloud-sun', description: 'Mix of sun and cloud patches' },
+      3: { label: 'Overcast', icon: 'cloud', description: 'Full cloud cover throughout' },
+      45: { label: 'Foggy', icon: 'cloud-fog', description: 'Reduced visibility due to fog' },
+      48: { label: 'Depositing Rime Fog', icon: 'cloud-fog', description: 'Icy fog conditions' },
+      51: { label: 'Light Drizzle', icon: 'cloud-drizzle', description: 'Gentle light rain mist' },
+      53: { label: 'Moderate Drizzle', icon: 'cloud-drizzle', description: 'Steady drizzle outdoors' },
+      55: { label: 'Dense Drizzle', icon: 'cloud-drizzle', description: 'Heavy drizzle conditions' },
+      61: { label: 'Slight Rain', icon: 'cloud-rain', description: 'Light rainfall showers' },
+      63: { label: 'Moderate Rain', icon: 'cloud-rain', description: 'Steady moderate rain' },
+      65: { label: 'Heavy Rain', icon: 'cloud-rain-wind', description: 'Heavy downpour expected' },
+      71: { label: 'Slight Snow', icon: 'snowflake', description: 'Light snowfall flurries' },
+      73: { label: 'Moderate Snow', icon: 'snowflake', description: 'Steady snowfall flurries' },
+      75: { label: 'Heavy Snow', icon: 'snowflake', description: 'Heavy snow accumulation' },
+      80: { label: 'Slight Rain Showers', icon: 'cloud-rain', description: 'Passing rain showers' },
+      81: { label: 'Moderate Rain Showers', icon: 'cloud-rain', description: 'Frequent rain showers' },
+      82: { label: 'Violent Rain Showers', icon: 'cloud-lightning', description: 'Heavy torrential showers' },
+      95: { label: 'Thunderstorm', icon: 'cloud-lightning', description: 'Thunderstorms with rain' },
+      96: { label: 'Thunderstorm with Hail', icon: 'cloud-lightning', description: 'Severe thunderstorm with hail' },
+    };
+
+    const DEFAULT_WEATHER_META = { label: 'Fair Weather', icon: 'cloud-sun', description: 'Variable weather conditions' };
+
+    const POPULAR_CITIES = [
+      { id: 2988507, name: 'Paris', country: 'France', country_code: 'FR', latitude: 48.8566, longitude: 2.3522, timezone: 'Europe/Paris' },
+      { id: 5128581, name: 'New York', country: 'United States', country_code: 'US', admin1: 'New York', latitude: 40.7128, longitude: -74.006, timezone: 'America/New_York' },
+      { id: 1850147, name: 'Tokyo', country: 'Japan', country_code: 'JP', latitude: 35.6762, longitude: 139.6503, timezone: 'Asia/Tokyo' },
+      { id: 2643743, name: 'London', country: 'United Kingdom', country_code: 'GB', latitude: 51.5074, longitude: -0.1278, timezone: 'Europe/London' },
+      { id: 2147714, name: 'Sydney', country: 'Australia', country_code: 'AU', latitude: -33.8688, longitude: 151.2093, timezone: 'Australia/Sydney' },
+      { id: 1275339, name: 'Mumbai', country: 'India', country_code: 'IN', latitude: 19.076, longitude: 72.8777, timezone: 'Asia/Kolkata' },
+    ];
+
+    function formatTemp(tempC, unit = 'C') {
+      if (tempC === null || tempC === undefined || isNaN(tempC)) return '--°';
+      if (unit === 'F') {
+        const tempF = Math.round((tempC * 9) / 5 + 32);
+        return `${tempF}°F`;
+      }
+      return `${Math.round(tempC)}°C`;
+    }
+
+    function formatWindSpeed(speedKmh, unit = 'C') {
+      if (!speedKmh && speedKmh !== 0) return '0 km/h';
+      if (unit === 'F') {
+        const mph = Math.round(speedKmh * 0.621371);
+        return `${mph} mph`;
+      }
+      return `${Math.round(speedKmh)} km/h`;
+    }
+
+    function WeatherApp() {
+      const [selectedCity, setSelectedCity] = useState(POPULAR_CITIES[0]);
+      const [query, setQuery] = useState('');
+      const [suggestions, setSuggestions] = useState([]);
+      const [weather, setWeather] = useState(null);
+      const [isLoading, setIsLoading] = useState(false);
+      const [isLoadingGeo, setIsLoadingGeo] = useState(false);
+      const [error, setError] = useState(null);
+      const [unit, setUnit] = useState('C');
+
+      useEffect(() => {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      }, [weather, suggestions, isLoading]);
+
+      const fetchWeather = async (city) => {
+        setIsLoading(true);
+        setError(null);
+        try {
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${city.latitude}&longitude=${city.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,uv_index_max&timezone=${encodeURIComponent(city.timezone || 'auto')}`;
+          
+          const res = await fetch(url);
+          if (!res.ok) throw new Error('Failed to retrieve forecast data.');
+          const data = await res.json();
+          setWeather(data);
+          setSelectedCity(city);
+        } catch (err) {
+          setError(err.message || 'Error fetching weather data.');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      useEffect(() => {
+        fetchWeather(selectedCity);
+      }, []);
+
+      const handleSearch = async (val) => {
+        setQuery(val);
+        if (val.trim().length < 2) {
+          setSuggestions([]);
+          return;
+        }
+        try {
+          const res = await fetch(`https_geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(val)}&count=5&language=en&format=json`.replace('https_geocoding', 'https://geocoding'));
+          const data = await res.json();
+          setSuggestions(data.results || []);
+        } catch {
+          setSuggestions([]);
+        }
+      };
+
+      const handleUseCurrentLocation = () => {
+        if (!navigator.geolocation) {
+          alert('Geolocation is not supported by your browser.');
+          return;
+        }
+        setIsLoadingGeo(true);
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            const { latitude, longitude } = pos.coords;
+            try {
+              const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m&timezone=auto`);
+              const data = await res.json();
+              const geoCity = {
+                id: Date.now(),
+                name: 'Current Location',
+                country: '',
+                latitude,
+                longitude,
+                timezone: data.timezone || 'auto'
+              };
+              fetchWeather(geoCity);
+            } catch {
+              setError('Could not locate weather for your coordinates.');
+            } finally {
+              setIsLoadingGeo(false);
+            }
+          },
+          () => {
+            alert('Unable to retrieve location permission.');
+            setIsLoadingGeo(false);
+          }
+        );
+      };
+
+      const current = weather?.current;
+      const daily = weather?.daily;
+      const hourly = weather?.hourly;
+      const code = current?.weather_code ?? 0;
+      const meta = WEATHER_CODES[code] || DEFAULT_WEATHER_META;
+
+      return (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+          {/* Header Bar */}
+          <header className="h-16 px-6 flex items-center justify-between border border-slate-800 bg-slate-900/60 backdrop-blur-md rounded-2xl shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30">
+                <i data-lucide="cloud-sun" class="w-5 h-5 text-white"></i>
+              </div>
+              <span className="font-extrabold text-xl tracking-tight text-white">
+                Weather<span className="text-blue-500">Intel</span>
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setUnit(unit === 'C' ? 'F' : 'C')}
+                className="px-3 py-1.5 text-xs font-semibold rounded-full bg-blue-600 text-white shadow-md hover:bg-blue-500 transition"
+              >
+                Unit: °{unit}
+              </button>
+            </div>
+          </header>
+
+          {/* Search Bar */}
+          <div className="relative flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <i data-lucide="search" class="absolute left-4 top-3.5 w-5 h-5 text-slate-400"></i>
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => handleSearch(e.target.value)}
+                placeholder="Search city e.g. Paris, Tokyo, New York..."
+                className="w-full pl-12 pr-4 py-3 bg-slate-900/80 backdrop-blur-md text-slate-100 placeholder-slate-500 border border-slate-800 rounded-2xl sm:rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+              {suggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-800">
+                  {suggestions.map((city) => (
+                    <div
+                      key={city.id}
+                      onClick={() => {
+                        fetchWeather(city);
+                        setQuery('');
+                        setSuggestions([]);
+                      }}
+                      className="px-4 py-3 hover:bg-slate-800 cursor-pointer flex justify-between text-sm"
+                    >
+                      <span className="font-medium text-white">{city.name}</span>
+                      <span className="text-slate-400 text-xs">{city.country}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleUseCurrentLocation}
+              disabled={isLoadingGeo}
+              className="flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-2xl sm:rounded-full shadow-lg shadow-blue-600/20 transition"
+            >
+              <i data-lucide="navigation" class="w-4 h-4"></i>
+              <span>GPS Location</span>
+            </button>
+          </div>
+
+          {/* Quick Popular Chips */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+            <span className="text-xs text-slate-400 whitespace-nowrap">Popular:</span>
+            {POPULAR_CITIES.map((city) => (
+              <button
+                key={city.id}
+                onClick={() => fetchWeather(city)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition border ${
+                  selectedCity.name === city.name
+                    ? 'bg-blue-600/20 border-blue-500/50 text-blue-400 font-semibold'
+                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800'
+                }`}
+              >
+                {city.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Main Weather Content */}
+          {isLoading ? (
+            <div className="p-12 text-center text-slate-400 space-y-3">
+              <i data-lucide="loader-2" class="w-8 h-8 animate-spin mx-auto text-blue-500"></i>
+              <p>Fetching forecast intel...</p>
+            </div>
+          ) : error ? (
+            <div className="p-8 bg-slate-900/60 border border-slate-800 rounded-3xl text-center space-y-3">
+              <p className="text-rose-400 font-bold">{error}</p>
+              <button onClick={() => fetchWeather(selectedCity)} className="px-4 py-2 bg-blue-600 text-white rounded-full text-xs">Retry</button>
+            </div>
+          ) : current && (
+            <div className="space-y-6">
+              {/* Hero Card */}
+              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 via-blue-700 to-blue-900 p-6 sm:p-8 shadow-2xl text-white border border-blue-500/30 space-y-6">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h1 className="text-3xl sm:text-4xl font-extrabold">{selectedCity.name}</h1>
+                    <p className="text-sm text-blue-100/80">{[selectedCity.admin1, selectedCity.country].filter(Boolean).join(', ')}</p>
+                  </div>
+                  <div className="px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-medium">
+                    Live Forecast
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 items-center gap-6">
+                  <div className="md:col-span-7 flex items-baseline gap-4">
+                    <div className="text-7xl sm:text-8xl font-black">
+                      {formatTemp(current.temperature_2m, unit)}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-sm text-blue-100">Feels like {formatTemp(current.apparent_temperature, unit)}</div>
+                      <div className="text-xs text-blue-200">
+                        H: {formatTemp(daily?.temperature_2m_max?.[0], unit)} • L: {formatTemp(daily?.temperature_2m_min?.[0], unit)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-5 md:text-right space-y-1">
+                    <div className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-white/20 text-white backdrop-blur-md border border-white/30">
+                      {meta.label}
+                    </div>
+                    <p className="text-xs text-blue-100/80">{meta.description}</p>
+                  </div>
+                </div>
+
+                {/* Metrics */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                  <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-md">
+                    <div className="text-xs text-blue-100/80">Humidity</div>
+                    <div className="text-base font-bold">{current.relative_humidity_2m}%</div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-md">
+                    <div className="text-xs text-blue-100/80">Wind</div>
+                    <div className="text-base font-bold">{formatWindSpeed(current.wind_speed_10m, unit)}</div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-md">
+                    <div className="text-xs text-blue-100/80">Precip Chance</div>
+                    <div className="text-base font-bold">{daily?.precipitation_probability_max?.[0] || 0}%</div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-md">
+                    <div className="text-xs text-blue-100/80">UV Index</div>
+                    <div className="text-base font-bold">{daily?.uv_index_max?.[0] || 0}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 7-Day Forecast */}
+              {daily && (
+                <div className="bg-slate-900/60 backdrop-blur-md rounded-3xl p-6 border border-slate-800 shadow-xl space-y-4">
+                  <h3 className="text-base font-bold text-slate-100">7-Day Forecast</h3>
+                  <div className="space-y-2">
+                    {daily.time.slice(0, 7).map((date, idx) => (
+                      <div key={date} className="p-3.5 rounded-2xl bg-slate-800/40 border border-slate-700/50 flex items-center justify-between text-sm">
+                        <span className="font-bold text-slate-200 w-28">{new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                        <span className="text-xs text-slate-400">{WEATHER_CODES[daily.weather_code[idx]]?.label || 'Fair'}</span>
+                        <div className="flex gap-3 font-semibold">
+                          <span className="text-slate-400">{formatTemp(daily.temperature_2m_min[idx], unit)}</span>
+                          <span className="text-white">{formatTemp(daily.temperature_2m_max[idx], unit)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<WeatherApp />);
+  </script>
+</body>
+</html>
